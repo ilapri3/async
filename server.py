@@ -77,19 +77,26 @@ async def main():
     addrs = ', '.join(str(sock.getsockname()) for sock in server.sockets)
     print(f'Сервер запущен на {addrs}')
     loop = asyncio.get_running_loop()
-    try:
-         # Запускаем сервер и функции обслуживания команд и остановки сервера параллельно
-         await asyncio.gather(
-             server.serve_forever(),        # Сервер принимает подключения
-             read_server_commands(loop),  # Читаем команды с консоли
-             stop_server_when_no_clients(server),  # Проверяем условие остановки сервера
-         )
-     except KeyboardInterrupt:
+
+    server_task = loop.create_task(server.serve_forever())
+    command_task = loop.create_task(read_server_commands(loop))
+    stop_task = loop.create_task(stop_server_when_no_clients(server))
+
+    tasks = [server_task, command_task, stop_task]
+    await asyncio.gather(*tasks)
+    except asyncio.CancelledError:
+    # Здесь мы ловим CancelledError, который возникает при отмене задач
+    pass
+    except KeyboardInterrupt:
          # Обрабатываем прерывание по Ctrl+C
          print("Сервер прерван пользователем (Ctrl+C)")
-         server.close()  # Останавливаем сервер
+         server.close()
          await server.wait_closed()
-     finally:
+         for task in tasks:
+            task.cancel()
+         await asyncio.gather(*tasks, return_exceptions=True)
+
+    finally:
          print("Сервер остановлен")
 
 
